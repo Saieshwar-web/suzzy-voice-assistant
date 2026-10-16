@@ -1,50 +1,61 @@
 """
 Dual-Mode Voice Assistant - Suzzy
-- When executed in Streamlit (e.g. Streamlit Cloud or `streamlit run voice.py`), this automatically launches the Web Voice Assistant app.
-- When executed in Terminal (`python voice.py`), this runs the Desktop CLI Voice Assistant.
+- Runs as a Web AI Voice Assistant when launched in Streamlit (or deployed to Streamlit Cloud).
+- Runs as a Desktop CLI Assistant when launched in terminal via `python voice.py`.
 """
 
+import os
 import sys
 
-# Detect if running under Streamlit (e.g. Streamlit Cloud or streamlit CLI)
-_is_streamlit = False
-try:
-    if "streamlit" in sys.modules or any("streamlit" in str(arg).lower() for arg in sys.argv):
-        _is_streamlit = True
-    else:
-        import streamlit as st
+def is_running_in_streamlit() -> bool:
+    """Detects whether the file is being executed within a Streamlit process."""
+    # 1. Streamlit Cloud container path
+    if any("mount" in str(arg).lower() for arg in sys.argv):
+        return True
+    # 2. Executed via `streamlit run voice.py`
+    if any("streamlit" in str(arg).lower() for arg in sys.argv):
+        return True
+    # 3. Streamlit environment variables
+    for key in os.environ:
+        if key.startswith("STREAMLIT_"):
+            return True
+    # 4. Streamlit script execution context
+    try:
         from streamlit.runtime.scriptrunner import get_script_run_ctx
         if get_script_run_ctx() is not None:
-            _is_streamlit = True
-except Exception:
-    pass
+            return True
+    except Exception:
+        pass
+    # 5. Check if streamlit is imported by the parent runner
+    if "streamlit" in sys.modules:
+        return True
+    return False
 
-if _is_streamlit:
-    # Run Streamlit Web Application
+if is_running_in_streamlit():
+    # Execute the Streamlit web application on every rerun
     import app
+    app.main()
 else:
-    # Run Desktop CLI Assistant
+    # ---------------- DESKTOP CLI ASSISTANT MODE ----------------
     import datetime
     import webbrowser
     import requests
     import time
     import logging
-    import os
     import random
     import re
     from assistant_core import process_command, DEFAULT_WEATHER_KEY
 
-    # ---------------- LOGGING ----------------
     logging.basicConfig(filename="assistant.log", level=logging.INFO, format="%(asctime)s - %(message)s")
 
-    # ---------------- VOICE ENGINE ----------------
+    # Speech output engine
     try:
         import pyttsx3
         try:
             engine = pyttsx3.init('sapi5')
         except Exception:
             engine = pyttsx3.init()
-    except Exception as e:
+    except Exception:
         engine = None
 
     def speak(text):
@@ -57,16 +68,14 @@ else:
             except Exception as e:
                 print(f"[Speech Output Error: {e}]")
 
-    # ---------------- TAKE COMMAND ----------------
     def take_command():
         try:
             import speech_recognition as sr
         except ImportError:
-            print("SpeechRecognition not installed. Install with: pip install SpeechRecognition")
+            print("SpeechRecognition not installed. Run: pip install SpeechRecognition")
             return ""
 
         r = sr.Recognizer()
-
         try:
             with sr.Microphone() as source:
                 print("\n🎙️ Listening...")
@@ -96,7 +105,6 @@ else:
             print(f"⚠️ Microphone error: {e}")
             return ""
 
-    # ---------------- MAIN DESKTOP ASSISTANT ----------------
     def run_assistant():
         print("=" * 55)
         print("🎙️  SUZZY AI DESKTOP VOICE ASSISTANT")
@@ -110,24 +118,19 @@ else:
 
         while True:
             command = take_command()
-
             if command == "":
                 continue
 
-            # EXIT ANYTIME
             if any(w in command for w in ["exit", "quit", "shutdown"]):
                 speak("Shutting down. Goodbye!")
                 break
 
-            # WAKE WORD DETECTION
             if any(word in command for word in wake_words) or command.startswith("hey"):
                 speak("I am listening. How can I help you?")
-
                 attempts = 0
 
                 while True:
                     command = take_command()
-
                     if command == "":
                         attempts += 1
                         if attempts >= 3:
@@ -138,17 +141,14 @@ else:
 
                     attempts = 0
 
-                    # SLEEP OR STOP
                     if any(word in command for word in ["stop", "sleep", "pause"]):
                         speak("Going to sleep. Say Hey Suzy to activate me again.")
                         break
 
-                    # EXIT
                     if any(word in command for word in ["exit", "quit", "goodbye"]):
                         speak("Goodbye! Have a great day!")
                         return
 
-                    # DESKTOP SPECIFIC APPS
                     if "notepad" in command:
                         speak("Opening Notepad")
                         os.system("notepad")
@@ -156,11 +156,8 @@ else:
                         speak("Opening Calculator")
                         os.system("calc")
                     else:
-                        # Execute through Core Engine
                         result = process_command(command)
                         speak(result["speech_response"])
-
-                        # If URL action, open in default browser
                         if result.get("url"):
                             try:
                                 webbrowser.open(result["url"])
