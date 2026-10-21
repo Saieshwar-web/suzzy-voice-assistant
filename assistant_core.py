@@ -4,12 +4,15 @@ Handles natural language intent detection, command parsing, and response generat
 """
 
 import datetime
+import os
 import random
 import re
 import urllib.parse
 import requests
 
-DEFAULT_WEATHER_KEY = "REDACTED_REMOVED_KEY"
+# ✅ SECURITY FIX: API key is now loaded from environment variable, NOT hardcoded.
+# Set OPENWEATHER_API_KEY in your environment or in a .env file (never commit .env to git).
+DEFAULT_WEATHER_KEY = os.environ.get("OPENWEATHER_API_KEY", "")
 
 JOKES = [
     "Why do programmers prefer dark mode? Because light attracts bugs!",
@@ -53,7 +56,7 @@ def calculate_expression(text: str):
     }
     for word, sym in replacements.items():
         expr = expr.replace(word, sym)
-    
+
     # Extract only numbers, operators and parentheses
     clean_expr = re.sub(r'[^0-9\+\-\*\/\.\(\) ]', '', expr).strip()
     if clean_expr and any(c.isdigit() for c in clean_expr) and any(c in "+-*/" for c in clean_expr):
@@ -77,8 +80,15 @@ def calculate_expression(text: str):
 def get_weather_info(city: str, api_key: str = None) -> dict:
     """Fetch current weather data for a specified city."""
     key = api_key if api_key and api_key.strip() else DEFAULT_WEATHER_KEY
+
+    if not key:
+        return {
+            "success": False,
+            "speech": "Weather API key is not configured. Please set the OPENWEATHER_API_KEY environment variable."
+        }
+
     url = f"https://api.openweathermap.org/data/2.5/weather?q={urllib.parse.quote(city)}&appid={key}&units=metric"
-    
+
     try:
         response = requests.get(url, timeout=5)
         data = response.json()
@@ -91,10 +101,10 @@ def get_weather_info(city: str, api_key: str = None) -> dict:
             wind_speed = round(data["wind"]["speed"] * 3.6, 1) # km/h
             city_name = data.get("name", city.title())
             country = data.get("sys", {}).get("country", "")
-            
+
             speech = (f"The temperature in {city_name} is currently {temp} degrees Celsius "
                       f"with {desc}. Humidity is {humidity} percent.")
-            
+
             return {
                 "success": True,
                 "city": city_name,
